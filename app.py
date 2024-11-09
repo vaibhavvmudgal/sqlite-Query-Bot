@@ -124,6 +124,18 @@ def list_sqlite_tables(db_file_path):
         st.error(f"Error fetching table list: {e}")
         return []
 
+def query_sqlite(db_file_path, query):
+    try:
+        conn = sqlite3.connect(db_file_path)
+        cursor = conn.cursor()
+        cursor.execute(query)
+        results = cursor.fetchall()
+        conn.close()
+        return results
+    except Exception as e:
+        st.error(f"Error executing query: {e}")
+        return []
+
 if db:
     # Directly use the dbfilepath instead of db.uri
     db_file_path = dbfilepath if dbfilepath else "temp_db.db"
@@ -161,8 +173,15 @@ if db:
         with st.chat_message("assistant"):
             streamlit_callback = StreamlitCallbackHandler(st.container())
             try:
-                # Ensuring correct response to queries
-                response = agent.run(user_query, callbacks=[streamlit_callback])
+                # Querying the database manually
+                query_result = query_sqlite(db_file_path, f"SELECT * FROM data WHERE Name = '{user_query}' LIMIT 10")
+                
+                # Check if the result is empty
+                if query_result:
+                    response = pd.DataFrame(query_result, columns=["Column1", "Column2", "Column3"]).to_string(index=False)
+                else:
+                    response = f"No records found for '{user_query}' in the 'data' table."
+
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.write(response)
             except Exception as e:
