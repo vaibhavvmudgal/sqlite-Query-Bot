@@ -38,9 +38,10 @@ def connect_mysql():
         return create_engine(f"mysql+pymysql://{user}:{password}@{host}/{db_name}")
     return None
 
+db = None  # Initialize db as None to handle cases where it may not get assigned
+
 if db_type == "SQLite" and uploaded_file is not None:
     if uploaded_file.name.endswith(("db", "sqlite")):
-        db_uri = "USE_LOCALDB"
         dbfilepath = Path(uploaded_file.name)
         with open(dbfilepath, "wb") as f:
             f.write(uploaded_file.getbuffer())
