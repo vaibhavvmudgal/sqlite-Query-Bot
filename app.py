@@ -52,19 +52,31 @@ def create_sqlite_with_inferred_types(file, db_file):
         column_type = column_types.get(column, 'TEXT')  # Default to TEXT if no type inferred
         # For TEXT columns, use VARCHAR (this is a synonym in SQLite)
         if column_type == 'TEXT':
-            create_table_query += f"{column} VARCHAR, "
+            create_table_query += f'"{column}" VARCHAR, '
         else:
-            create_table_query += f"{column} {column_type}, "
+            create_table_query += f'"{column}" {column_type}, '
     
     # Remove the trailing comma and space
     create_table_query = create_table_query.rstrip(', ') + ')'
     
     # Execute the table creation
-    cursor.execute(create_table_query)
+    try:
+        cursor.execute(create_table_query)
+        conn.commit()
+    except sqlite3.Error as e:
+        st.error(f"Error while creating table: {e}")
+        conn.close()
+        return None
     
     # Insert data into the table
     for _, row in df.iterrows():
-        cursor.execute(f"INSERT INTO data ({', '.join(df.columns)}) VALUES ({', '.join(['?' for _ in df.columns])})", tuple(row))
+        insert_query = f"INSERT INTO data ({', '.join([f'\"{col}\"' for col in df.columns])}) VALUES ({', '.join(['?' for _ in df.columns])})"
+        try:
+            cursor.execute(insert_query, tuple(row))
+        except sqlite3.Error as e:
+            st.error(f"Error while inserting data: {e}")
+            conn.close()
+            return None
     
     # Commit the changes and close the connection
     conn.commit()
