@@ -1,141 +1,126 @@
-import streamlit as st
-import pandas as pd
 import sqlite3
-from sqlalchemy import create_engine
-from langchain.agents import create_sql_agent
-from langchain.sql_database import SQLDatabase
-from langchain.agents.agent_types import AgentType
-from langchain.callbacks import StreamlitCallbackHandler
-from langchain.agents.agent_toolkits import SQLDatabaseToolkit
-from langchain_groq import ChatGroq
-import tempfile
-import os
-from pathlib import Path  # Import Path from pathlib
+import pandas as pd
+import streamlit as st
+from pathlib import Path
 
-st.set_page_config(page_title="LangChain: Chat with SQL DB", page_icon="✿")
-st.title("Chat with SQL Database")
-
-# Set your Groq API Key
-api_key = "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"
-
-# Sidebar for file upload and DB type selection
-uploaded_file = st.sidebar.file_uploader("Upload your Database (SQLite, CSV, Excel)", type=["db", "sqlite", "csv", "xlsx"])
-db_type = st.sidebar.selectbox("Database Type", ["SQLite", "MySQL"])
-
-# Function to create a temporary SQLite database from CSV or Excel
-def create_temp_sqlite_from_df(df):
-    temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
-    conn = sqlite3.connect(temp_db.name)
-    # Convert DataFrame to SQLite and create the table 'data'
-    df.to_sql("data", conn, if_exists="replace", index=False)
-    conn.close()
-    return temp_db.name
-
-# Function to connect to MySQL
-def connect_mysql():
-    user = st.sidebar.text_input("MySQL Username")
-    password = st.sidebar.text_input("MySQL Password", type="password")
-    host = st.sidebar.text_input("MySQL Host", value="localhost")
-    db_name = st.sidebar.text_input("MySQL Database Name")
-    if st.sidebar.button("Connect to MySQL"):
-        return create_engine(f"mysql+pymysql://{user}:{password}@{host}/{db_name}")
-    return None
-
-db = None  # Initialize db as None to handle cases where it may not get assigned
-temp_db_path = None  # Placeholder for SQLite file path
-
-# Set up the database based on user input
-if db_type == "SQLite" and uploaded_file is not None:
-    if uploaded_file.name.endswith(("db", "sqlite")):
-        # Handle uploaded SQLite database directly
-        dbfilepath = Path(uploaded_file.name)  # Use Path here
-        with open(dbfilepath, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        db = SQLDatabase.from_uri(f"sqlite:///{dbfilepath}")
-
-    elif uploaded_file.name.endswith("csv"):
-        # Convert CSV to SQLite and load it
-        df = pd.read_csv(uploaded_file)
-        temp_db_path = create_temp_sqlite_from_df(df)
-        db = SQLDatabase.from_uri(f"sqlite:///{temp_db_path}")
-
-    elif uploaded_file.name.endswith("xlsx"):
-        # Convert Excel to SQLite and load it
-        df = pd.read_excel(uploaded_file)
-        temp_db_path = create_temp_sqlite_from_df(df)
-        db = SQLDatabase.from_uri(f"sqlite:///{temp_db_path}")
-
-    # Offer download of the temporary SQLite database
-    if temp_db_path:
-        with open(temp_db_path, "rb") as file:
-            btn = st.download_button(
-                label="Download Converted SQLite Database",
-                data=file,
-                file_name="converted_database.db",
-                mime="application/x-sqlite3"
-            )
-
-elif db_type == "MySQL":
-    # Connect to MySQL database
-    engine = connect_mysql()
-    if engine:
-        db = SQLDatabase(engine)
-
-if db:
-    # Initialize LLM with Groq's API and LangChain's toolkit
-    llm = ChatGroq(groq_api_key=api_key, model_name="Llama3-8b-8192", streaming=True)
-    toolkit = SQLDatabaseToolkit(db=db, llm=llm)
-    agent = create_sql_agent(
-        llm=llm,
-        toolkit=toolkit,
-        verbose=True,
-        agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-        handle_parsing_errors=True
-    )
-
-    # Display available tables in the database
-    try:
-        table_names = db.get_table_names()
-        if not table_names:
-            st.error("No tables found in the uploaded database.")
+# Function to infer the SQLite column data types based on the content of the DataFrame
+def infer_column_types(df):
+    column_types = {}
+    
+    for column in df.columns:
+        # Check the type of each column
+        if df[column].dtype == 'object':
+            # If the column is of type object, infer if it's numeric or text
+            if df[column].apply(pd.to_numeric, errors='coerce').notnull().all():
+                # If all values can be converted to numbers, classify it as INTEGER
+                if df[column].apply(pd.to_numeric, errors='coerce').dropna().apply(float.is_integer).all():
+                    column_types[column] = 'INTEGER'
+                else:
+                    column_types[column] = 'TEXT'  # Treat numbers as TEXT if there's mixed content
+            else:
+                column_types[column] = 'TEXT'
+        elif df[column].dtype in ['int64', 'float64']:
+            # For numeric columns, assign INTEGER
+            column_types[column] = 'INTEGER'
         else:
-            st.write("**Available tables in the database:**")
-            st.write(table_names)
+            column_types[column] = 'TEXT'  # Default to TEXT for other types
 
-            # Show schema for each table
-            for table in table_names:
-                try:
-                    st.write(f"**Schema for `{table}` table:**")
-                    schema = db.get_table_info(table)
-                    if schema:
-                        st.write(schema)
-                    else:
-                        st.warning(f"No schema found for table `{table}`.")
-                except Exception as e:
-                    st.warning(f"Could not retrieve schema for table `{table}`. Error: {e}")
-    except ValueError as e:
-        st.error(f"Error loading tables: {e}")
+    return column_types
 
-    # Chat input and display
-    if "messages" not in st.session_state or st.sidebar.button("Clear message history"):
-        st.session_state["messages"] = [{"role": "assistant", "content": "How can I help you?"}]
+# Function to convert CSV or Excel to SQLite with inferred column types
+def create_sqlite_with_inferred_types(file, db_file):
+    # Read the uploaded file (either CSV or Excel)
+    if file.name.endswith('.csv'):
+        df = pd.read_csv(file)
+    elif file.name.endswith('.xlsx'):
+        df = pd.read_excel(file)
+    else:
+        st.error("Unsupported file format. Please upload a CSV or Excel file.")
+        return None
+    
+    # Infer column types
+    column_types = infer_column_types(df)
+    
+    # Create a connection to the SQLite database
+    conn = sqlite3.connect(db_file)
+    cursor = conn.cursor()
+    
+    # Create a table with inferred column types
+    create_table_query = "CREATE TABLE IF NOT EXISTS data ("
+    for column in df.columns:
+        # Use the inferred types
+        column_type = column_types.get(column, 'TEXT')  # Default to TEXT if no type inferred
+        # For TEXT columns, use VARCHAR (this is a synonym in SQLite)
+        if column_type == 'TEXT':
+            create_table_query += f"{column} VARCHAR, "
+        else:
+            create_table_query += f"{column} {column_type}, "
+    
+    # Remove the trailing comma and space
+    create_table_query = create_table_query.rstrip(', ') + ')'
+    
+    # Execute the table creation
+    cursor.execute(create_table_query)
+    
+    # Insert data into the table
+    for _, row in df.iterrows():
+        cursor.execute(f"INSERT INTO data ({', '.join(df.columns)}) VALUES ({', '.join(['?' for _ in df.columns])})", tuple(row))
+    
+    # Commit the changes and close the connection
+    conn.commit()
+    conn.close()
 
-    for msg in st.session_state.messages:
-        st.chat_message(msg["role"]).write(msg["content"])
+# Function to query the SQLite database
+def query_database(db_file, query):
+    conn = sqlite3.connect(db_file)
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(query)
+        results = cursor.fetchall()
+        columns = [description[0] for description in cursor.description]
+        conn.close()
+        return columns, results
+    except sqlite3.Error as e:
+        conn.close()
+        return None, f"Error executing query: {e}"
 
-    user_query = st.chat_input(placeholder="Ask anything from the database")
+# Streamlit App
+def main():
+    st.title("SQLite Query Bot")
+    
+    uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
+    
+    if uploaded_file is not None:
+        dbfilepath = Path(uploaded_file.name).stem + ".sqlite"
+        
+        # Convert CSV/Excel to SQLite with inferred column types
+        create_sqlite_with_inferred_types(uploaded_file, dbfilepath)
+        st.success(f"File uploaded and converted to SQLite database: {dbfilepath}")
+        
+        # Display tables
+        conn = sqlite3.connect(dbfilepath)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = cursor.fetchall()
+        conn.close()
+        
+        st.write("Available tables in the database:")
+        st.write([table[0] for table in tables])
+        
+        # Query input
+        query = st.text_area("Enter your SQL query", "SELECT * FROM data LIMIT 10;")
+        
+        if st.button("Execute Query"):
+            columns, results = query_database(dbfilepath, query)
+            if columns is not None:
+                st.write(f"Query Results ({len(results)} rows):")
+                st.write(columns)
+                st.write(results)
+            else:
+                st.error(results)  # Display error message if query failed
+    else:
+        st.warning("Please upload a CSV or Excel file.")
 
-    if user_query:
-        st.session_state.messages.append({"role": "user", "content": user_query})
-        st.chat_message("user").write(user_query)
-
-        with st.chat_message("assistant"):
-            streamlit_callback = StreamlitCallbackHandler(st.container())
-            try:
-                response = agent.run(user_query, callbacks=[streamlit_callback])
-            except ValueError as e:
-                response = "An error occurred while processing your request. Please try again or rephrase your query."
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            st.write(response)
-else:
-    st.info("Please upload a database file or connect to a MySQL database to start querying.")
+if __name__ == "__main__":
+    main()
