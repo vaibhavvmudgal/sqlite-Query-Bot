@@ -1,14 +1,12 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from io import BytesIO
 from pathlib import Path
 from langchain.agents import create_sql_agent
 from langchain.sql_database import SQLDatabase
 from langchain.agents.agent_types import AgentType
 from langchain.callbacks import StreamlitCallbackHandler
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
-from sqlalchemy import create_engine
 from langchain_groq import ChatGroq
 
 # Set Streamlit page config
@@ -91,19 +89,8 @@ def create_sqlite_with_inferred_types(file, db_file):
     conn.commit()
     conn.close()
 
-# Configure and connect to MySQL
-def connect_mysql():
-    user = st.sidebar.text_input("MySQL Username")
-    password = st.sidebar.text_input("MySQL Password", type="password")
-    host = st.sidebar.text_input("MySQL Host", value="localhost")
-    db_name = st.sidebar.text_input("MySQL Database Name")
-    if st.sidebar.button("Connect to MySQL"):
-        return create_engine(f"mysql+pymysql://{user}:{password}@{host}/{db_name}")
-    return None
-
 # Initialize database object
 db = None
-df_display = None  # DataFrame for displaying data
 
 if db_type == "SQLite" and uploaded_file is not None:
     dbfilepath = None
@@ -113,21 +100,12 @@ if db_type == "SQLite" and uploaded_file is not None:
         with open(dbfilepath, "wb") as f:
             f.write(uploaded_file.getbuffer())
         db = SQLDatabase.from_uri(f"sqlite:///{dbfilepath}")
-        # Read and display the SQLite database content
-        conn = sqlite3.connect(dbfilepath)
-        df_display = pd.read_sql_query("SELECT * FROM data LIMIT 10", conn)  # Show top 10 rows
-        conn.close()
     
     elif uploaded_file.name.endswith("csv") or uploaded_file.name.endswith("xlsx"):
         # Create SQLite database from CSV or Excel
         dbfilepath = "temp_db.db"  # Temporary SQLite file name
         create_sqlite_with_inferred_types(uploaded_file, dbfilepath)
         db = SQLDatabase.from_uri(f"sqlite:///{dbfilepath}")
-        
-        # Read and display the data from the newly created SQLite file
-        conn = sqlite3.connect(dbfilepath)
-        df_display = pd.read_sql_query("SELECT * FROM data LIMIT 10", conn)  # Show top 10 rows
-        conn.close()
 
 elif db_type == "MySQL":
     engine = connect_mysql()
@@ -135,6 +113,13 @@ elif db_type == "MySQL":
         db = SQLDatabase(engine)
 
 if db:
+    # Print available tables (for debugging purposes)
+    try:
+        tables = db.engine.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+        st.write(f"Tables in the database: {tables}")
+    except Exception as e:
+        st.error(f"Error fetching table list: {e}")
+
     # LLM model
     llm = ChatGroq(groq_api_key=api_key, model_name="Llama3-8b-8192", streaming=True)
 
@@ -163,14 +148,12 @@ if db:
 
         with st.chat_message("assistant"):
             streamlit_callback = StreamlitCallbackHandler(st.container())
-            response = agent.run(user_query, callbacks=[streamlit_callback])
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            st.write(response)
+            try:
+                response = agent.run(user_query, callbacks=[streamlit_callback])
+                st.session_state.messages.append({"role": "assistant", "content": response})
+                st.write(response)
+            except Exception as e:
+                st.error(f"Error during query execution: {e}")
 
 else:
     st.info("Please upload a database file or connect to a MySQL database to start querying.")
-
-# Display the content of the uploaded database (if available)
-if df_display is not None:
-    st.subheader("Database Preview")
-    st.dataframe(df_display)
