@@ -8,6 +8,7 @@ from langchain.callbacks import StreamlitCallbackHandler
 from langchain.sql_database import SQLDatabase
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from langchain_groq import ChatGroq
+import re
 
 # Set Streamlit page config
 st.set_page_config(page_title="LangChain: Chat with SQL DB", page_icon="✿")
@@ -136,6 +137,15 @@ def query_sqlite(db_file_path, query):
         st.error(f"Error executing query: {e}")
         return []
 
+# Handle input query
+def extract_name_from_query(query):
+    """Extract name from the query, assuming it's part of 'Name = <value>' format."""
+    # Use regex to find 'Name = ' followed by a string
+    match = re.search(r"Name\s*=\s*'([^']+)'", query, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
+
 if db:
     # Directly use the dbfilepath instead of db.uri
     db_file_path = dbfilepath if dbfilepath else "temp_db.db"
@@ -173,19 +183,27 @@ if db:
         with st.chat_message("assistant"):
             streamlit_callback = StreamlitCallbackHandler(st.container())
             try:
-                # Querying the database manually
-                query_result = query_sqlite(db_file_path, f"SELECT * FROM data WHERE Name = '{user_query}' LIMIT 10")
+                # Extract the name from the user input
+                name = extract_name_from_query(user_query)
                 
-                # Check if the result is empty
-                if query_result:
-                    response = pd.DataFrame(query_result, columns=["Column1", "Column2", "Column3"]).to_string(index=False)
-                else:
-                    response = f"No records found for '{user_query}' in the 'data' table."
+                if name:
+                    # Querying the database manually with extracted name
+                    query_result = query_sqlite(db_file_path, f"SELECT * FROM data WHERE Name = '{name}' LIMIT 10")
+                    
+                    # Check if the result is empty
+                    if query_result:
+                        response = pd.DataFrame(query_result, columns=["Column1", "Column2", "Column3"]).to_string(index=False)
+                    else:
+                        response = f"No records found for '{name}' in the 'data' table."
 
-                st.session_state.messages.append({"role": "assistant", "content": response})
-                st.write(response)
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+                    st.write(response)
+                else:
+                    st.session_state.messages.append({"role": "assistant", "content": "Could not extract a valid name from your query."})
+                    st.write("Could not extract a valid name from your query.")
             except Exception as e:
                 st.error(f"Error during query execution: {e}")
 
 else:
     st.info("Please upload a database file or connect to a MySQL database to start querying.")
+    
