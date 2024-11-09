@@ -113,14 +113,6 @@ elif db_type == "MySQL":
         db = SQLDatabase(engine)
 
 if db:
-    # Fetching available tables
-    try:
-        table_query = "SELECT name FROM sqlite_master WHERE type='table';"
-        tables = db.run(table_query)
-        st.write(f"Tables in the database: {tables}")
-    except Exception as e:
-        st.error(f"Error fetching table list: {e}")
-
     # LLM model
     llm = ChatGroq(groq_api_key=api_key, model_name="Llama3-8b-8192", streaming=True)
 
@@ -150,6 +142,7 @@ if db:
         with st.chat_message("assistant"):
             streamlit_callback = StreamlitCallbackHandler(st.container())
             try:
+                # Ensuring correct response to queries
                 response = agent.run(user_query, callbacks=[streamlit_callback])
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.write(response)
@@ -158,3 +151,4 @@ if db:
 
 else:
     st.info("Please upload a database file or connect to a MySQL database to start querying.")
+    
