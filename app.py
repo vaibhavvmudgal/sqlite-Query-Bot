@@ -74,7 +74,7 @@ elif db_type == "MySQL":
     if engine:
         db = SQLDatabase(engine)
 
-# Check if db is connected and retrieve table names
+# Check if db is connected and retrieve table names and schema
 if db:
     # LLM model
     llm = ChatGroq(groq_api_key=api_key, model_name="Llama3-8b-8192", streaming=True)
@@ -91,10 +91,16 @@ if db:
         handle_parsing_errors=True  # Enables automatic handling of parsing errors
     )
 
-    # Display tables to give the agent context and show the user available tables
+    # Display tables and schema to give the agent context and show the user available tables
     table_names = db.get_table_names()
     st.write("**Available tables in the database:**")
     st.write(table_names)
+
+    # Display table schemas for better context
+    for table in table_names:
+        st.write(f"**Schema for `{table}` table:**")
+        schema = db.get_table_info(table)
+        st.write(schema)
 
     if "messages" not in st.session_state or st.sidebar.button("Clear message history"):
         st.session_state["messages"] = [{"role": "assistant", "content": "How can I help you?"}]
