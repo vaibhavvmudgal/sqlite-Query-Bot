@@ -11,6 +11,7 @@ import pandas as pd
 from io import BytesIO
 from langchain_groq import ChatGroq
 import tempfile
+import os
 
 st.set_page_config(page_title="LangChain: Chat with SQL DB", page_icon="✿")
 st.title("Chat with SQL DB")
@@ -92,15 +93,21 @@ if db:
     )
 
     # Display tables and schema to give the agent context and show the user available tables
-    table_names = db.get_table_names()
-    st.write("**Available tables in the database:**")
-    st.write(table_names)
+    try:
+        table_names = db.get_table_names()
+        if not table_names:
+            st.error("No tables found in the uploaded database.")
+        else:
+            st.write("**Available tables in the database:**")
+            st.write(table_names)
 
-    # Display table schemas for better context
-    for table in table_names:
-        st.write(f"**Schema for `{table}` table:**")
-        schema = db.get_table_info(table)
-        st.write(schema)
+            # Display table schemas for better context
+            for table in table_names:
+                st.write(f"**Schema for `{table}` table:**")
+                schema = db.get_table_info(table)
+                st.write(schema)
+    except ValueError as e:
+        st.error(f"Error loading tables: {e}")
 
     if "messages" not in st.session_state or st.sidebar.button("Clear message history"):
         st.session_state["messages"] = [{"role": "assistant", "content": "How can I help you?"}]
