@@ -10,6 +10,7 @@ import sqlite3
 import pandas as pd
 from io import BytesIO
 from langchain_groq import ChatGroq
+import tempfile
 
 st.set_page_config(page_title="LangChain: Chat with SQL DB", page_icon="✿")
 st.title("Chat with SQL DB")
@@ -22,11 +23,12 @@ db_type = st.sidebar.selectbox("Database Type", ["SQLite", "MySQL"])
 api_key = "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"
 
 # Function to load CSV or Excel into a temporary SQLite database
-def create_temp_sqlite_from_df(df, db_name="temp_db.db"):
-    conn = sqlite3.connect(db_name)
+def create_temp_sqlite_from_df(df):
+    temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+    conn = sqlite3.connect(temp_db.name)
     df.to_sql("data", conn, if_exists="replace", index=False)
     conn.close()
-    return db_name  # Return the file path
+    return temp_db.name
 
 # Configure and connect to MySQL
 def connect_mysql():
@@ -39,7 +41,6 @@ def connect_mysql():
     return None
 
 db = None  # Initialize db as None to handle cases where it may not get assigned
-sqlite_file_path = None  # Variable to store the path of the generated SQLite file
 
 if db_type == "SQLite" and uploaded_file is not None:
     if uploaded_file.name.endswith(("db", "sqlite")):
@@ -47,17 +48,26 @@ if db_type == "SQLite" and uploaded_file is not None:
         with open(dbfilepath, "wb") as f:
             f.write(uploaded_file.getbuffer())
         db = SQLDatabase.from_uri(f"sqlite:///{dbfilepath}")
-        sqlite_file_path = dbfilepath
 
     elif uploaded_file.name.endswith("csv"):
         df = pd.read_csv(uploaded_file)
-        sqlite_file_path = create_temp_sqlite_from_df(df)
-        db = SQLDatabase.from_uri(f"sqlite:///{sqlite_file_path}")
+        temp_db_path = create_temp_sqlite_from_df(df)
+        db = SQLDatabase.from_uri(f"sqlite:///{temp_db_path}")
 
     elif uploaded_file.name.endswith("xlsx"):
         df = pd.read_excel(uploaded_file)
-        sqlite_file_path = create_temp_sqlite_from_df(df)
-        db = SQLDatabase.from_uri(f"sqlite:///{sqlite_file_path}")
+        temp_db_path = create_temp_sqlite_from_df(df)
+        db = SQLDatabase.from_uri(f"sqlite:///{temp_db_path}")
+
+    # Offer download link for the SQLite database created from CSV/Excel
+    if 'temp_db_path' in locals():
+        with open(temp_db_path, "rb") as file:
+            btn = st.download_button(
+                label="Download Converted SQLite Database",
+                data=file,
+                file_name="converted_database.db",
+                mime="application/x-sqlite3"
+            )
 
 elif db_type == "MySQL":
     engine = connect_mysql()
@@ -71,12 +81,13 @@ if db:
     # Toolkit
     toolkit = SQLDatabaseToolkit(db=db, llm=llm)
 
-    # Agent
+    # Agent with error handling for parsing issues
     agent = create_sql_agent(
         llm=llm,
         toolkit=toolkit,
         verbose=True,
-        agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION
+        agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+        handle_parsing_errors=True  # Enables automatic handling of parsing errors
     )
 
     if "messages" not in st.session_state or st.sidebar.button("Clear message history"):
@@ -93,18 +104,11 @@ if db:
 
         with st.chat_message("assistant"):
             streamlit_callback = StreamlitCallbackHandler(st.container())
-            response = agent.run(user_query, callbacks=[streamlit_callback])
+            try:
+                response = agent.run(user_query, callbacks=[streamlit_callback])
+            except ValueError as e:
+                response = "An error occurred while processing your request. Please try again or rephrase your query."
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.write(response)
-    
-    # Provide a download link for the SQLite database if it was created from CSV or Excel
-    if sqlite_file_path and db_type == "SQLite":
-        with open(sqlite_file_path, "rb") as f:
-            st.download_button(
-                label="Download SQLite Database",
-                data=f,
-                file_name="converted_database.db",
-                mime="application/x-sqlite3"
-            )
 else:
     st.info("Please upload a database file or connect to a MySQL database to start querying.")
