@@ -26,7 +26,7 @@ def create_temp_sqlite_from_df(df, db_name="temp_db.db"):
     conn = sqlite3.connect(db_name)
     df.to_sql("data", conn, if_exists="replace", index=False)
     conn.close()
-    return f"sqlite:///{db_name}"
+    return db_name  # Return the file path
 
 # Configure and connect to MySQL
 def connect_mysql():
@@ -39,6 +39,7 @@ def connect_mysql():
     return None
 
 db = None  # Initialize db as None to handle cases where it may not get assigned
+sqlite_file_path = None  # Variable to store the path of the generated SQLite file
 
 if db_type == "SQLite" and uploaded_file is not None:
     if uploaded_file.name.endswith(("db", "sqlite")):
@@ -46,16 +47,17 @@ if db_type == "SQLite" and uploaded_file is not None:
         with open(dbfilepath, "wb") as f:
             f.write(uploaded_file.getbuffer())
         db = SQLDatabase.from_uri(f"sqlite:///{dbfilepath}")
+        sqlite_file_path = dbfilepath
 
     elif uploaded_file.name.endswith("csv"):
         df = pd.read_csv(uploaded_file)
-        db_uri = create_temp_sqlite_from_df(df)
-        db = SQLDatabase.from_uri(db_uri)
+        sqlite_file_path = create_temp_sqlite_from_df(df)
+        db = SQLDatabase.from_uri(f"sqlite:///{sqlite_file_path}")
 
     elif uploaded_file.name.endswith("xlsx"):
         df = pd.read_excel(uploaded_file)
-        db_uri = create_temp_sqlite_from_df(df)
-        db = SQLDatabase.from_uri(db_uri)
+        sqlite_file_path = create_temp_sqlite_from_df(df)
+        db = SQLDatabase.from_uri(f"sqlite:///{sqlite_file_path}")
 
 elif db_type == "MySQL":
     engine = connect_mysql()
@@ -94,5 +96,15 @@ if db:
             response = agent.run(user_query, callbacks=[streamlit_callback])
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.write(response)
+    
+    # Provide a download link for the SQLite database if it was created from CSV or Excel
+    if sqlite_file_path and db_type == "SQLite":
+        with open(sqlite_file_path, "rb") as f:
+            st.download_button(
+                label="Download SQLite Database",
+                data=f,
+                file_name="converted_database.db",
+                mime="application/x-sqlite3"
+            )
 else:
     st.info("Please upload a database file or connect to a MySQL database to start querying.")
