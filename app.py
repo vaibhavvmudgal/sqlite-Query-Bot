@@ -113,9 +113,10 @@ elif db_type == "MySQL":
         db = SQLDatabase(engine)
 
 if db:
-    # Print available tables (for debugging purposes)
+    # Fetching available tables
     try:
-        tables = db.engine.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+        table_query = "SELECT name FROM sqlite_master WHERE type='table';"
+        tables = db.run(table_query)
         st.write(f"Tables in the database: {tables}")
     except Exception as e:
         st.error(f"Error fetching table list: {e}")
