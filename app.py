@@ -112,9 +112,9 @@ elif db_type == "MySQL":
     if engine:
         db = SQLDatabase(engine)
 
-def list_sqlite_tables(db):
+def list_sqlite_tables(db_file_path):
     try:
-        conn = sqlite3.connect(db.uri.split("///")[-1])  # Extracting SQLite db filepath from URI
+        conn = sqlite3.connect(db_file_path)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = cursor.fetchall()
@@ -125,6 +125,9 @@ def list_sqlite_tables(db):
         return []
 
 if db:
+    # Get the path of the SQLite database file (for listing tables)
+    db_file_path = Path(db.uri.split("///")[-1]) if db.uri else "temp_db.db"
+
     # LLM model
     llm = ChatGroq(groq_api_key=api_key, model_name="Llama3-8b-8192", streaming=True)
 
@@ -140,7 +143,7 @@ if db:
     )
 
     # List tables
-    tables = list_sqlite_tables(db)
+    tables = list_sqlite_tables(db_file_path)
     st.write("Tables in the database: ", tables)
 
     if "messages" not in st.session_state or st.sidebar.button("Clear message history"):
