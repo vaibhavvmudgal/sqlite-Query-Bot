@@ -29,4 +29,5 @@ requests
 transformers
 mysql-connector-python
 SQLAlchemy
+openpyxl
 
