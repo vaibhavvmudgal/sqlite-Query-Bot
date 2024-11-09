@@ -103,6 +103,7 @@ def connect_mysql():
 
 # Initialize database object
 db = None
+df_display = None  # DataFrame for displaying data
 
 if db_type == "SQLite" and uploaded_file is not None:
     dbfilepath = None
@@ -112,12 +113,21 @@ if db_type == "SQLite" and uploaded_file is not None:
         with open(dbfilepath, "wb") as f:
             f.write(uploaded_file.getbuffer())
         db = SQLDatabase.from_uri(f"sqlite:///{dbfilepath}")
+        # Read and display the SQLite database content
+        conn = sqlite3.connect(dbfilepath)
+        df_display = pd.read_sql_query("SELECT * FROM data LIMIT 10", conn)  # Show top 10 rows
+        conn.close()
     
     elif uploaded_file.name.endswith("csv") or uploaded_file.name.endswith("xlsx"):
         # Create SQLite database from CSV or Excel
         dbfilepath = "temp_db.db"  # Temporary SQLite file name
         create_sqlite_with_inferred_types(uploaded_file, dbfilepath)
         db = SQLDatabase.from_uri(f"sqlite:///{dbfilepath}")
+        
+        # Read and display the data from the newly created SQLite file
+        conn = sqlite3.connect(dbfilepath)
+        df_display = pd.read_sql_query("SELECT * FROM data LIMIT 10", conn)  # Show top 10 rows
+        conn.close()
 
 elif db_type == "MySQL":
     engine = connect_mysql()
@@ -159,3 +169,8 @@ if db:
 
 else:
     st.info("Please upload a database file or connect to a MySQL database to start querying.")
+
+# Display the content of the uploaded database (if available)
+if df_display is not None:
+    st.subheader("Database Preview")
+    st.dataframe(df_display)
