@@ -1,11 +1,11 @@
-import streamlit as st
-import pandas as pd
 import sqlite3
+import pandas as pd
+import streamlit as st
 from pathlib import Path
 from langchain.agents import create_sql_agent
-from langchain.sql_database import SQLDatabase
 from langchain.agents.agent_types import AgentType
 from langchain.callbacks import StreamlitCallbackHandler
+from langchain.sql_database import SQLDatabase
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from langchain_groq import ChatGroq
 
@@ -112,6 +112,18 @@ elif db_type == "MySQL":
     if engine:
         db = SQLDatabase(engine)
 
+def list_sqlite_tables(db):
+    try:
+        conn = sqlite3.connect(db.uri.split("///")[-1])  # Extracting SQLite db filepath from URI
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = cursor.fetchall()
+        conn.close()
+        return [table[0] for table in tables]
+    except Exception as e:
+        st.error(f"Error fetching table list: {e}")
+        return []
+
 if db:
     # LLM model
     llm = ChatGroq(groq_api_key=api_key, model_name="Llama3-8b-8192", streaming=True)
@@ -126,6 +138,10 @@ if db:
         verbose=True,
         agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION
     )
+
+    # List tables
+    tables = list_sqlite_tables(db)
+    st.write("Tables in the database: ", tables)
 
     if "messages" not in st.session_state or st.sidebar.button("Clear message history"):
         st.session_state["messages"] = [{"role": "assistant", "content": "How can I help you?"}]
@@ -151,4 +167,3 @@ if db:
 
 else:
     st.info("Please upload a database file or connect to a MySQL database to start querying.")
-    
