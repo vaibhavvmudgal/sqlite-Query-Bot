@@ -11,6 +11,7 @@ from langchain_groq import ChatGroq
 from io import BytesIO
 import tempfile
 import os
+from pathlib import Path  
 
 st.set_page_config(page_title="LangChain: Chat with SQL DB", page_icon="✿")
 st.title("Chat with SQL Database")
