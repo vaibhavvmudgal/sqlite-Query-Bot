@@ -8,10 +8,9 @@ from langchain.agents.agent_types import AgentType
 from langchain.callbacks import StreamlitCallbackHandler
 from langchain.agents.agent_toolkits import SQLDatabaseToolkit
 from langchain_groq import ChatGroq
-from io import BytesIO
 import tempfile
 import os
-from pathlib import Path  
+from pathlib import Path  # Import Path from pathlib
 
 st.set_page_config(page_title="LangChain: Chat with SQL DB", page_icon="✿")
 st.title("Chat with SQL Database")
@@ -27,6 +26,7 @@ db_type = st.sidebar.selectbox("Database Type", ["SQLite", "MySQL"])
 def create_temp_sqlite_from_df(df):
     temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
     conn = sqlite3.connect(temp_db.name)
+    # Convert DataFrame to SQLite and create the table 'data'
     df.to_sql("data", conn, if_exists="replace", index=False)
     conn.close()
     return temp_db.name
@@ -48,7 +48,7 @@ temp_db_path = None  # Placeholder for SQLite file path
 if db_type == "SQLite" and uploaded_file is not None:
     if uploaded_file.name.endswith(("db", "sqlite")):
         # Handle uploaded SQLite database directly
-        dbfilepath = Path(uploaded_file.name)
+        dbfilepath = Path(uploaded_file.name)  # Use Path here
         with open(dbfilepath, "wb") as f:
             f.write(uploaded_file.getbuffer())
         db = SQLDatabase.from_uri(f"sqlite:///{dbfilepath}")
@@ -107,7 +107,10 @@ if db:
                 try:
                     st.write(f"**Schema for `{table}` table:**")
                     schema = db.get_table_info(table)
-                    st.write(schema)
+                    if schema:
+                        st.write(schema)
+                    else:
+                        st.warning(f"No schema found for table `{table}`.")
                 except Exception as e:
                     st.warning(f"Could not retrieve schema for table `{table}`. Error: {e}")
     except ValueError as e:
