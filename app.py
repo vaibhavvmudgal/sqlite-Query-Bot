@@ -125,8 +125,8 @@ def list_sqlite_tables(db_file_path):
         return []
 
 if db:
-    # Get the path of the SQLite database file (for listing tables)
-    db_file_path = Path(db.uri.split("///")[-1]) if db.uri else "temp_db.db"
+    # Directly use the dbfilepath instead of db.uri
+    db_file_path = dbfilepath if dbfilepath else "temp_db.db"
 
     # LLM model
     llm = ChatGroq(groq_api_key=api_key, model_name="Llama3-8b-8192", streaming=True)
