@@ -101,11 +101,14 @@ if db:
             st.write("**Available tables in the database:**")
             st.write(table_names)
 
-            # Display table schemas for better context
+            # Ensure correct access to each table’s schema
             for table in table_names:
-                st.write(f"**Schema for `{table}` table:**")
-                schema = db.get_table_info(table)
-                st.write(schema)
+                try:
+                    st.write(f"**Schema for `{table}` table:**")
+                    schema = db.get_table_info(table)
+                    st.write(schema)
+                except Exception as e:
+                    st.warning(f"Could not retrieve schema for table `{table}`. Error: {e}")
     except ValueError as e:
         st.error(f"Error loading tables: {e}")
 
