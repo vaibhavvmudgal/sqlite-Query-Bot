@@ -10,8 +10,8 @@ import sqlite3
 import pandas as pd
 from langchain_groq import ChatGroq
 
-st.set_page_config(page_title="Chat with QeuryEase", page_icon="🦜")
-st.title("🦜 Chat with QeuryEase")
+st.set_page_config(page_title="Chat with QueryEase", page_icon="🦜")
+st.title("🦜 Chat with QueryEase")
 
 # Default API Key
 API_KEY = "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"
